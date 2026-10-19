@@ -88,7 +88,12 @@ export const generate = async ({
         async onMessage(data: Uint8Array, { isAuthenticated }: any) {
           if (!isAuthenticated) return
           try {
-            const { data: responseData } = await (db as any).execProtocol(data)
+            const { data: responseData } = await (db as any).execProtocol(
+              data,
+              {
+                throwOnError: false,
+              },
+            )
             return responseData
           } catch {
             return undefined
