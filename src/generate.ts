@@ -2,6 +2,7 @@ import * as zg from "zapatos/generate"
 import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { createRequire } from "node:module"
+import type { Socket } from "node:net"
 import {
   getConnectionStringFromEnv,
   getPgConnectionFromEnv,
@@ -67,16 +68,12 @@ export const generate = async ({
 
     const db = new PGlite()
     const gatewayPassword = randomBytes(24).toString("hex")
-
-    await migrate({
-      client: db as any,
-      migrationsDir,
-      defaultDatabase,
-      cwd: process.cwd(),
-      schemas,
-    })
+    const sockets = new Set<Socket>()
+    const errors: unknown[] = []
 
     const server = net.createServer(async (socket) => {
+      sockets.add(socket)
+      socket.once("close", () => sockets.delete(socket))
       const connection = await fromNodeSocket(socket, {
         serverVersion: "16.3 (PGlite)",
         auth: {
@@ -100,11 +97,25 @@ export const generate = async ({
       })
     })
 
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    const port = (server.address() as any).port
-    const connectionString = `postgres://postgres:${gatewayPassword}@127.0.0.1:${port}/postgres`
-
     try {
+      await migrate({
+        client: db as any,
+        migrationsDir,
+        defaultDatabase,
+        cwd: process.cwd(),
+        schemas,
+      })
+
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject)
+        server.listen(0, "127.0.0.1", () => {
+          server.removeListener("error", reject)
+          resolve()
+        })
+      })
+      const port = (server.address() as any).port
+      const connectionString = `postgres://postgres:${gatewayPassword}@127.0.0.1:${port}/postgres`
+
       await zg.generate({
         db: {
           connectionString,
@@ -123,8 +134,26 @@ export const generate = async ({
         },
         connectionString,
       )
+    } catch (error) {
+      errors.push(error)
     } finally {
-      server.close()
+      try {
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve())
+          for (const socket of sockets) socket.destroy()
+        })
+      } catch (error) {
+        errors.push(error)
+      }
+      try {
+        await db.close()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "PGlite generation and cleanup failed")
     }
     return
   }

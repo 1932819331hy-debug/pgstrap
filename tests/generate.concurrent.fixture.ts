@@ -20,21 +20,26 @@ mock.module("pg-schema-dump", () => ({
   dumpTree: (options: any) => dumpImpl(options),
 }))
 mock.module("../src/migrate", () => ({ migrate: async () => {} }))
-mock.module("@electric-sql/pglite", () => ({ PGlite: class {} }))
+mock.module("@electric-sql/pglite", () => ({
+  PGlite: class {
+    async close() {}
+  },
+}))
 mock.module("pg-gateway/node", () => ({ fromNodeSocket: async () => {} }))
 mock.module("node:net", () => ({
   createServer: () => {
     const port = ++nextPort
-    return {
+    return Object.assign(new EventEmitter(), {
       listen: (_port: number, host: string, callback: () => void) => {
         boundAddresses.push(host)
         callback()
       },
       address: () => ({ port }),
-      close: () => {
+      close: (callback: () => void) => {
         closedServers++
+        callback()
       },
-    }
+    })
   },
 }))
 mock.module("node:child_process", () => ({
