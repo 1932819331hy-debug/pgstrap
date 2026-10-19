@@ -1,5 +1,6 @@
 import * as zg from "zapatos/generate"
 import { spawn } from "node:child_process"
+import { randomBytes } from "node:crypto"
 import { createRequire } from "node:module"
 import {
   getConnectionStringFromEnv,
@@ -65,6 +66,7 @@ export const generate = async ({
     const net = await import("node:net")
 
     const db = new PGlite()
+    const gatewayPassword = randomBytes(24).toString("hex")
 
     await migrate({
       client: db as any,
@@ -80,8 +82,8 @@ export const generate = async ({
         auth: {
           method: "password",
           validateCredentials: ({ username, password }: any) =>
-            username === "postgres" && password === "postgres",
-          getClearTextPassword: () => "postgres",
+            username === "postgres" && password === gatewayPassword,
+          getClearTextPassword: () => gatewayPassword,
         },
         async onStartup() {
           await (db as any).waitReady
@@ -98,9 +100,9 @@ export const generate = async ({
       })
     })
 
-    await new Promise<void>((resolve) => server.listen(0, resolve))
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
     const port = (server.address() as any).port
-    const connectionString = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`
+    const connectionString = `postgres://postgres:${gatewayPassword}@127.0.0.1:${port}/postgres`
 
     try {
       await zg.generate({
