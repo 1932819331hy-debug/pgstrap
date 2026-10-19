@@ -26,9 +26,11 @@ export const initPgstrap = async (ctx: Pick<Context, "cwd">) => {
   }
 
   if (!fs.existsSync(path.join(cwd, "pgstrap.config.js"))) {
+    const configExport =
+      pkg.type === "module" ? "export default " : "module.exports = "
     fs.writeFileSync(
       path.join(cwd, "pgstrap.config.js"),
-      `module.exports = ${JSON.stringify(
+      `${configExport}${JSON.stringify(
         {
           defaultDatabase: "my_service_name",
           schemas: ["public"],
