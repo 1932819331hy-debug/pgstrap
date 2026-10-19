@@ -6,6 +6,7 @@ let generateImpl: (options: any) => Promise<void> = async () => {}
 let dumpImpl: (options: any) => Promise<void> = async () => {}
 let nextPort = 24000
 let closedServers = 0
+const boundAddresses: string[] = []
 const children: Array<{
   env: NodeJS.ProcessEnv
   child: EventEmitter
@@ -25,7 +26,10 @@ mock.module("node:net", () => ({
   createServer: () => {
     const port = ++nextPort
     return {
-      listen: (_port: number, callback: () => void) => callback(),
+      listen: (_port: number, host: string, callback: () => void) => {
+        boundAddresses.push(host)
+        callback()
+      },
       address: () => ({ port }),
       close: () => {
         closedServers++
@@ -80,6 +84,7 @@ async function isolated(run: () => Promise<void>) {
   delete process.env.DATABASE_URL
   process.env.DATABASE_URI = "postgres://lower:priority@127.0.0.1:2/other"
   children.length = 0
+  boundAddresses.length = 0
   try {
     await run()
   } finally {
@@ -122,6 +127,8 @@ test("external generate keeps its URI while a PGlite call is suspended", async (
     releaseLocal.resolve()
     await waitForChildCount(1)
     expect(children).toHaveLength(1)
+    expect(boundAddresses).toEqual(["127.0.0.1"])
+    expect(new URL(localTypesUri).password).toMatch(/^[a-f0-9]{48}$/)
     expect(children[0].env.POSTGRES_URI).toBe(localTypesUri)
     expect(children[0].env.PG_URI).toBe(localTypesUri)
     expect(children[0].env.DATABASE_URL).toBe(localTypesUri)
@@ -156,6 +163,10 @@ test("overlapping PGlite calls give each structure dump its own isolated URI", a
     await waitForChildCount(2)
 
     expect(children).toHaveLength(2)
+    expect(boundAddresses).toEqual(["127.0.0.1", "127.0.0.1"])
+    expect(new URL(ownUris.a).password).toMatch(/^[a-f0-9]{48}$/)
+    expect(new URL(ownUris.b).password).toMatch(/^[a-f0-9]{48}$/)
+    expect(new URL(ownUris.a).password).not.toBe(new URL(ownUris.b).password)
     expect(children[0].env.POSTGRES_URI).toBe(ownUris.a)
     expect(children[0].env.PG_URI).toBe(ownUris.a)
     expect(children[0].env.DATABASE_URL).toBe(ownUris.a)
@@ -179,6 +190,7 @@ test("PGlite child export failures do not mutate the caller environment", async 
       await new Promise((resolve) => setTimeout(resolve, 0))
     children[0].exit(1)
     await expect(run).rejects.toThrow("pg-schema-dump exited with 1")
+    expect(boundAddresses).toEqual(["127.0.0.1"])
     expect(
       Object.fromEntries(keys.map((key) => [key, process.env[key]])),
     ).toEqual(initial)
