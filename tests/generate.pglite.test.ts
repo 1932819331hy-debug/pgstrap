@@ -50,26 +50,24 @@ test("generate with pglite runs migrations and dumps structure", async () => {
     for (const key of connectionEnvKeys) {
       expect(process.env[key]).toBe(externalConnectionString)
     }
+    const zapatosFile = path.join(tmp, "db", "zapatos", "schema.d.ts")
+    const structureDir = path.join(
+      tmp,
+      "db",
+      "structure",
+      "public",
+      "tables",
+      "foo",
+    )
+
+    expect(fs.existsSync(zapatosFile)).toBe(true)
+    expect(fs.existsSync(path.join(structureDir, "table.sql"))).toBe(true)
   } finally {
     for (const key of connectionEnvKeys) {
       const previousValue = previousConnectionEnv[key]
       if (previousValue === undefined) delete process.env[key]
       else process.env[key] = previousValue
     }
+    fs.rmSync(tmp, { recursive: true, force: true })
   }
-
-  const zapatosFile = path.join(tmp, "db", "zapatos", "schema.d.ts")
-  const structureDir = path.join(
-    tmp,
-    "db",
-    "structure",
-    "public",
-    "tables",
-    "foo",
-  )
-
-  expect(fs.existsSync(zapatosFile)).toBe(true)
-  expect(fs.existsSync(path.join(structureDir, "table.sql"))).toBe(true)
-
-  fs.rmSync(tmp, { recursive: true, force: true })
 })
