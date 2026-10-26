@@ -17,6 +17,7 @@ export async function createMigration(name: string, ctx: Context) {
     `npx node-pg-migrate --migration-file-language ts -m ${
       ctx.dbDir ?? "src/db"
     }/migrations create ${name}`,
+    { cwd: ctx.cwd },
   )
   console.log(`Migration ${name} created`)
 }
